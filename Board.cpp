@@ -7,14 +7,16 @@
 
 #include "Board.h"
 #include "Game.h"
-#include "Player.h"
+#include "globals.h"
+#include <iostream>
 #include <vector>
+
+using namespace std;
 
 class BoardImpl
 {
-public:
+  public:
     BoardImpl(const Game& g);
-    ~BoardImpl();
     void clear();
     void block();
     void unblock();
@@ -25,9 +27,15 @@ public:
     bool allShipsDestroyed() const;
 private:
     const Game& m_game;
-    int nRows;
-    int nCols;
-    char m_board[][10];
+    char m_board[MAXROWS][MAXCOLS];
+    struct Ship {
+        int shipId;
+        char shipSymbol;
+        int shipHealth;
+        Point topOrLeft;
+        Direction dir;
+    };
+    vector<Ship> m_ship;
 };
 
 /* Initialize a board. The parameter g refers to the game the board is being used in. Board
@@ -35,19 +43,11 @@ private:
  of ships will presumably ask the game object the board was constructed with. */
 BoardImpl::BoardImpl(const Game& g)
 : m_game(g) {
-    nRows = g.rows();
-    nCols = g.cols();
-    
-    for (int r = 0; r < nRows; r++) {
-        for (int c = 0; c < nCols; c++) {
+    for (int r = 0; r < g.rows(); r++) {
+        for (int c = 0; c < g.cols(); c++) {
             m_board[r][c] = '.';
         }
     }
-}
-
-// destructor
-BoardImpl::~BoardImpl() {
-    
 }
 
 /* This function clears the board so it is empty, ready to be populated with ships. */
@@ -59,16 +59,16 @@ void BoardImpl::clear() {
     }
 }
 
-/* For a board has R rows and C columns, this function blocks exactly ⌊RC/2⌋ randomly
- chosen positions on the board (i.e, half the positions). This function will be used only by
- the MediocrePlayer when placing ships on the board at the start of play. If a position is
- blocked, then that player may not place a ship in a way that occupies that location. */
 void BoardImpl::block() {
-    for (int r = 0; r < m_game.rows(); r++) {
-        for (int c = 0; c < m_game.cols(); c++) {
-            if (randInt(2) == 0) {
-                m_board[r][c] = 'X';
-            }
+    Point p;
+    int boardArea = m_game.rows()*m_game.cols();
+    int halfBoard = (boardArea/2);
+    int count = 0;
+    while (halfBoard != count) {
+        p = m_game.randomPoint();
+        if (m_board[p.r][p.c] == '.') {
+            m_board[p.r][p.c] = '#';
+            count++;
         }
     }
 }
@@ -77,7 +77,7 @@ void BoardImpl::block() {
 void BoardImpl::unblock() {
     for (int r = 0; r < m_game.rows(); r++) {
         for (int c = 0; c < m_game.cols(); c++) {
-            if (m_board[r][c] == 'X') {
+            if (m_board[r][c] == '#') {
                 m_board[r][c] = '.';
             }
         }
@@ -85,24 +85,168 @@ void BoardImpl::unblock() {
 }
 
 bool BoardImpl::placeShip(Point topOrLeft, int shipId, Direction dir) {
-    
+    for (int i = 0; i < m_ship.size(); i++) {
+        if (shipId < 0) {
+            return false;
+        } else if (m_ship[i].shipSymbol == shipId) {
+            return false;
+        }
+    }
+    if (topOrLeft.r >= 0 && topOrLeft.r < m_game.rows() && topOrLeft.c >= 0 && topOrLeft.c < m_game.cols()) {
+        if (dir == HORIZONTAL) {
+            Point leftmost = topOrLeft;
+            if (leftmost.c + m_game.shipLength(shipId) <= m_game.cols()) {
+                for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                    if (m_board[leftmost.r][leftmost.c+i] != '.') {
+                        return false;
+                    }
+                }
+                for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                    if (m_board[leftmost.r][leftmost.c+i] == '.') {
+                        m_board[leftmost.r][leftmost.c+i] = m_game.shipSymbol(shipId);
+                    }
+                }
+                Ship placedShip{shipId, m_game.shipSymbol(shipId), m_game.shipLength(shipId), topOrLeft, dir};
+                m_ship.push_back(placedShip);
+                return true;
+            }
+        } if (dir == VERTICAL){
+            Point topmost = topOrLeft;
+            if (topmost.r + m_game.shipLength(shipId) <= m_game.rows()) {
+                for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                    if (m_board[topmost.r+i][topmost.c] != '.') {
+                        return false;
+                    }
+                }
+                for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                    if (m_board[topmost.r+i][topmost.c] == '.') {
+                        m_board[topmost.r+i][topmost.c] = m_game.shipSymbol(shipId);
+                    }
+                }
+                Ship placedShip{shipId, m_game.shipSymbol(shipId), m_game.shipLength(shipId), topOrLeft, dir};
+                m_ship.push_back(placedShip);
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
-bool BoardImpl::unplaceShip(Point topOrLeft, int shipId, Direction dir) {
-    
+bool BoardImpl::unplaceShip(Point topOrLeft, int shipId, Direction dir)
+{
+    if(m_ship[shipId].dir != dir || (m_ship[shipId].topOrLeft.r != topOrLeft.r && m_ship[shipId].topOrLeft.c != topOrLeft.c))
+        return false;
+
+    vector <Ship>:: iterator it = m_ship.begin();
+
+    if (shipId > 0 && shipId < m_game.nShips()) {
+        if (dir == HORIZONTAL) {
+            Point leftmost = topOrLeft;
+            for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                if (m_game.isValid(Point(leftmost.r, leftmost.c + i)) &&  m_board[leftmost.r][leftmost.c + i] == m_game.shipSymbol(shipId)) {
+                    m_board[leftmost.r][leftmost.c + i] = '.';
+                    return true;
+                }
+            }
+            m_ship.erase(it);
+        }
+        if (dir == VERTICAL) {
+            Point topmost = topOrLeft;
+            for (int i = 0; i < m_game.shipLength(shipId); i++) {
+                if (m_game.isValid(Point(topmost.r + i, topmost.c)) && m_board[topmost.r + i][topmost.c] == m_game.shipSymbol(shipId))
+                {
+                    m_board[topmost.r + i][topmost.c] = '.';
+                    return true;
+                }
+            }
+            m_ship.erase(it);
+        }
+    }
+    return false;
 }
 
 void BoardImpl::display(bool shotsOnly) const {
-    
+    cout << "  ";
+    for (int c = 0; c < m_game.cols(); c++) {
+        cout << c;
+    }
+    cout << endl;
+    for (int r = 0; r < m_game.rows(); r++) {
+        cout << r << " ";
+        for (int c = 0; c < m_game.cols(); c++) {
+            if (shotsOnly) {
+                if (m_board[r][c] != '.' && m_board[r][c] != 'X' && m_board[r][c] != 'o') {
+                    cout << '.';
+                }
+                else {
+                    cout << m_board[r][c];
+                }
+            }
+            if (!shotsOnly) {
+                cout << m_board[r][c];
+            }
+        }
+        cout << endl;
+    }
 }
 
-bool BoardImpl::attack(Point p, bool& shotHit, bool& shipDestroyed, int& shipId) {
-    
+
+bool BoardImpl::attack(Point p, bool& shotHit, bool& shipDestroyed, int& shipId)
+{
+    if (!m_game.isValid(p)) {
+        return false;
+    }
+
+    if (m_board[p.r][p.c] == 'o' || m_board[p.r][p.c] == 'X') {
+        return false;
+    }
+
+    else if (m_board[p.r][p.c] == '.') {
+        shotHit = false;
+        shipDestroyed = false;
+        m_board[p.r][p.c] = 'o';
+        return true;
+    }
+
+    else
+    {
+        shotHit = true;
+        for (int i = 0; i < m_game.nShips(); i++)
+        {
+            if (m_game.shipSymbol(i) == m_board[p.r][p.c])
+            {
+                shipId = i;
+                m_ship[i].shipHealth--;
+                if (m_ship[i].shipHealth == 0)
+                    shipDestroyed = true;
+                else
+                    shipDestroyed = false;
+            }
+        }
+        m_board[p.r][p.c] = 'X';
+        return true;
+    }
+
+    return false;
 }
 
-bool BoardImpl::allShipsDestroyed() const {
-    
+bool BoardImpl::allShipsDestroyed() const
+{
+    for (int r = 0; r < m_game.rows(); r++)
+    {
+        for (int c = 0; c < m_game.cols(); c++)
+        {
+            if (m_board[r][c] != '.' && m_board[r][c] !='o' && m_board[r][c] !='X')
+                return false;
+        }
+    }
+    return true;
 }
+
+//******************** Board functions ********************************
+
+// These functions simply delegate to BoardImpl's functions.
+// You probably don't want to change any of this code.
 
 Board::Board(const Game& g)
 {
@@ -153,3 +297,4 @@ bool Board::allShipsDestroyed() const
 {
     return m_impl->allShipsDestroyed();
 }
+
