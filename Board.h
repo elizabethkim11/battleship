@@ -15,7 +15,7 @@ class BoardImpl;
 
 class Board
 {
-public:
+  public:
     Board(const Game& g);
     ~Board();
     void clear();
@@ -26,8 +26,12 @@ public:
     void display(bool shotsOnly) const;
     bool attack(Point p, bool& shotHit, bool& shipDestroyed, int& shipId);
     bool allShipsDestroyed() const;
-private:
+      // We prevent a Board object from being copied or assigned
+    Board(const Board&) = delete;
+    Board& operator=(const Board&) = delete;
+
+  private:
     BoardImpl* m_impl;
 };
 
-#endif /* BOARD_INCLUDED */
+#endif // BOARD_INCLUDED
